@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>אזור אישי - ניטור BMI</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.6.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.6.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.6.0/firebase-database-compat.js"></script>
+  <script src="Reg.js"></script>
+</head>
+<body class="bg-light">
+
+  <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm">
+    <div class="container">
+      <a class="navbar-brand" href="index.html">
+        <img src="img/icon5.png" alt="לוגו" height="50">
+      </a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#personalNavbar">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      
+      <div class="collapse navbar-collapse" id="personalNavbar">
+        <ul class="navbar-nav ms-auto">
+          <li class="nav-item"><a class="nav-link" href="index.html">בית</a></li>
+          <li class="nav-item"><a class="nav-link" href="gallery.html">מדידה חדשה</a></li>
+          <li class="nav-item"><a class="nav-link active" href="personalBMI.html">אזור אישי</a></li>
+          <li class="nav-item"><a class="nav-link text-danger" href="#" onclick="logout()">התנתקות</a></li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <main class="container my-4">
+    <div class="row gy-4"> 
+      
+      <div class="col-12 col-lg-4">
+        <div class="card shadow-sm border-0 h-100">
+          <div class="card-body text-center">
+            <div class="rounded-circle bg-primary text-white d-inline-flex align-items-center justify-content-center mb-3" style="width: 70px; height: 70px; font-size: 1.8rem;">
+              👤
+            </div>
+            <h3 id="userName" class="h4 mb-1">טוען...</h3>
+            <div class="badge bg-info text-dark mb-3" id="userGoal">המטרה: טוען...</div>
+            
+            <p class="text-muted small" id="userDetails"></p>
+            <hr>
+            <div class="text-end px-2">
+              <p class="mb-2"><strong>מחלות רקע:</strong> <span id="userDiseases" class="text-secondary">-</span></p>
+              <p class="mb-3"><strong>מין:</strong> <span id="userGender" class="text-secondary">-</span></p>
+            </div>
+            
+            <div class="d-grid mt-4">
+                <button class="btn btn-outline-danger btn-sm" onclick="logout()">התנתק מהחשבון</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-12 col-lg-8">
+        <div class="card shadow-sm border-0 h-100">
+          <div class="card-header bg-white border-0 py-3">
+            <h5 class="card-title mb-0">מגמת BMI לאורך זמן</h5>
+          </div>
+          <div class="card-body">
+            <div class="chart-container" style="position: relative; height:40vh; width:100%">
+              <canvas id="bmiChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    firebase.auth().onAuthStateChanged(async (user) => {
+      if (!user) {
+        // אם המשתמש לא מחובר, שלח אותו ל-login
+        window.location.href = "login.html";
+        return;
+      }
+
+      const db = firebase.database();
+      const userRef = db.ref("users/" + user.uid);
+
+      // טעינת נתוני משתמש מ-Firebase
+      userRef.once("value").then((snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          document.getElementById("userName").innerText = data.name;
+          document.getElementById("userDetails").innerText = "שנת לידה : " + data.birthYear;
+          document.getElementById("userGender").innerText = data.gender === "male" ? "זכר" : "נקבה";
+          
+          // הצגת המטרה (אם קיימת ב-Database, אם לא - מציג ברירת מחדל)
+          document.getElementById("userGoal").innerText = "המטרה: " + (data.goal || "שמירה על בריאות");
+          
+          document.getElementById("userDiseases").innerText = data.diseases ? 
+            (Array.isArray(data.diseases) ? data.diseases.join(", ") : data.diseases) : "ללא";
+        }
+      });
+
+      // טעינת היסטוריית מדידות לגרף
+      const historyRef = db.ref("users/" + user.uid + "/history");
+      historyRef.on("value", (snapshot) => {
+        const historyData = snapshot.val();
+        if (historyData) {
+          const dates = [];
+          const bmiValues = [];
+          Object.values(historyData).forEach(entry => {
+            dates.push(entry.date);
+            bmiValues.push(entry.bmi);
+          });
+          renderChart(dates, bmiValues);
+        }
+      });
+    });
+
+    function renderChart(labels, dataPoints) {
+      const ctx = document.getElementById('bmiChart').getContext('2d');
+      if (window.myBmiChart) { window.myBmiChart.destroy(); }
+
+      window.myBmiChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'מדד BMI',
+            data: dataPoints,
+            borderColor: '#66a6ff',
+            backgroundColor: 'rgba(102, 166, 255, 0.1)',
+            borderWidth: 2,
+            fill: true,
+            tension: 0.4,
+            pointRadius: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: { beginAtZero: false },
+            x: { ticks: { maxRotation: 45, minRotation: 45 } }
+          }
+        }
+      });
+    }
+
+    function logout() {
+      firebase.auth().signOut().then(() => {
+        window.location.href = "login.html";
+      });
+    }
+  </script>
+</body>
+</html>
