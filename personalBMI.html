@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>אזור אישי - ניטור BMI</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.6.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.6.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.6.0/firebase-database-compat.js"></script>
+  <script src="Reg.js"></script>
+  <style>
+    .bmi-scale-container { height: 30px; display: flex; border-radius: 15px; overflow: hidden; margin-top: 10px; position: relative; }
+    .scale-zone { display: flex; align-items: center; justify-content: center; color: #000; font-weight: bold; font-size: 0.8rem; }
+    .zone-low { background-color: #ffeb3b; width: 30%; }
+    .zone-normal { background-color: #4caf50; width: 25%; }
+    .zone-high { background-color: #f44336; width: 45%; }
+    .bmi-indicator { position: absolute; top: -5px; width: 4px; height: 40px; background-color: #000; transition: left 0.5s ease; z-index: 10; }
+    .table-container { max-height: 300px; overflow-y: auto; }
+  </style>
+</head>
+<body class="bg-light">
+
+  <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm">
+    <div class="container">
+      <a class="navbar-brand" href="index.html"><img src="img/icon5.png" alt="לוגו" height="50"></a>
+      
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#personalNavbar">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="collapse navbar-collapse" id="personalNavbar">
+        <ul class="navbar-nav ms-auto">
+          <li class="nav-item"><a class="nav-link" href="index.html">בית</a></li>
+          <li class="nav-item"><a class="nav-link" href="gallery.html">מדידה חדשה</a></li>
+          <li class="nav-item"><a class="nav-link active" href="personalBMI.html">אזור אישי</a></li>
+          <li class="nav-item"><a class="nav-link text-danger" href="#" onclick="logout()">התנתקות</a></li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <main class="container my-4">
+    <div class="row gy-4"> 
+      
+      <div class="col-12 col-lg-4">
+        <div class="card shadow-sm border-0">
+          <div class="card-body text-center">
+            <div class="rounded-circle bg-primary text-white d-inline-flex align-items-center justify-content-center mb-3" style="width: 70px; height: 70px; font-size: 1.8rem;">👤</div>
+            <h3 id="userName" class="h4 mb-1">טוען...</h3>
+            <div class="badge bg-info text-dark mb-3" id="userGoal">המטרה: טוען...</div>
+            <p class="text-muted small" id="userDetails"></p>
+            <hr>
+            <div class="text-end px-2">
+              <p class="mb-2"><strong>מחלות רקע:</strong> <span id="userDiseases" class="text-secondary">-</span></p>
+              <p class="mb-3"><strong>מין:</strong> <span id="userGender" class="text-secondary">-</span></p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card shadow-sm border-0 mt-4">
+            <div class="card-header bg-white">
+                <h6 class="mb-0">ניהול היסטוריה</h6>
+            </div>
+            <div class="card-body p-0 table-container table-responsive">
+                <table class="table table-hover mb-0 text-center">
+                    <thead class="table-light">
+                        <tr>
+                            <th>תאריך</th>
+                            <th>BMI</th>
+                            <th>פעולה</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyTableBody">
+                        </tbody>
+                </table>
+            </div>
+        </div>
+      </div>
+
+      <div class="col-12 col-lg-8">
+        <div class="card shadow-sm border-0 mb-4">
+          <div class="card-header bg-white border-0 py-3">
+            <h5 class="card-title mb-0">מגמת BMI לאורך זמן</h5>
+          </div>
+          <div class="card-body">
+            <div class="chart-container" style="position: relative; height:35vh; width:100%">
+              <canvas id="bmiChart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <h5 class="card-title">סטטוס BMI נוכחי: <span id="currentBmiVal" class="text-primary">-</span></h5>
+                <p id="bmiStatusText" class="small text-muted mb-3">בצע מדידה כדי לראות את הסטטוס שלך</p>
+                <div class="position-relative">
+                    <div class="bmi-scale-container">
+                        <div class="scale-zone zone-low">נמוך</div>
+                        <div class="scale-zone zone-normal">תקין</div>
+                        <div class="scale-zone zone-high">גבוה</div>
+                        <div id="bmiIndicator" class="bmi-indicator d-none"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    firebase.auth().onAuthStateChanged(async (user) => {
+      if (!user) { window.location.href = "login.html"; return; }
+
+      const db = firebase.database();
+      const userUid = user.uid;
+      
+      db.ref("users/" + userUid).once("value").then((snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          document.getElementById("userName").innerText = data.name;
+          document.getElementById("userDetails").innerText = "שנת לידה : " + data.birthYear;
+          document.getElementById("userGender").innerText = data.gender === "male" ? "זכר" : "נקבה";
+          document.getElementById("userGoal").innerText = "המטרה: " + (data.goal || "שמירה על בריאות");
+          document.getElementById("userDiseases").innerText = data.diseases ? (Array.isArray(data.diseases) ? data.diseases.join(", ") : data.diseases) : "ללא";
+        }
+      });
+
+      db.ref("users/" + userUid + "/history").on("value", (snapshot) => {
+        const historyData = snapshot.val();
+        const tableBody = document.getElementById("historyTableBody");
+        tableBody.innerHTML = ""; 
+
+        if (historyData) {
+          const keys = Object.keys(historyData);
+          const dates = [];
+          const bmiValues = [];
+
+          keys.forEach((key) => {
+            const entry = historyData[key];
+            dates.push(entry.date);
+            bmiValues.push(entry.bmi);
+
+            const row = `
+                <tr>
+                    <td class="small">${entry.date.split(',')[0]}</td>
+                    <td class="fw-bold">${entry.bmi}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-danger border-0" onclick="deleteMeasure('${key}')">
+                            🗑️
+                        </button>
+                    </td>
+                </tr>
+            `;
+            tableBody.innerHTML += row;
+          });
+          
+          renderChart(dates, bmiValues);
+          updateBmiScale(bmiValues[bmiValues.length - 1]);
+        } else {
+            tableBody.innerHTML = "<tr><td colspan='3'>אין מדידות שמורות</td></tr>";
+            renderChart([], []);
+            document.getElementById("bmiIndicator").classList.add("d-none");
+            document.getElementById("currentBmiVal").innerText = "-";
+        }
+      });
+    });
+
+    function deleteMeasure(key) {
+        if (confirm("האם אתה בטוח שברצונך למחוק את המדידה הזו מההיסטוריה?")) {
+            const user = firebase.auth().currentUser;
+            firebase.database().ref("users/" + user.uid + "/history/" + key).remove()
+                .catch((error) => alert("שגיאה במחיקה: " + error.message));
+        }
+    }
+
+    function updateBmiScale(bmi) {
+      if (!bmi) return;
+      const indicator = document.getElementById("bmiIndicator");
+      const currentBmiVal = document.getElementById("currentBmiVal");
+      const statusText = document.getElementById("bmiStatusText");
+
+      currentBmiVal.innerText = bmi;
+      indicator.classList.remove("d-none");
+      let position = ((bmi - 10) / (40 - 10)) * 100;
+      position = Math.max(0, Math.min(100, position));
+      indicator.style.left = (100 - position) + "%";
+
+      if (bmi < 18.5) { statusText.innerText = "נמוך"; statusText.className = "text-warning fw-bold"; }
+      else if (bmi <= 24.9) { statusText.innerText = "תקין"; statusText.className = "text-success fw-bold"; }
+      else { statusText.innerText = "גבוה"; statusText.className = "text-danger fw-bold"; }
+    }
+
+    function renderChart(labels, dataPoints) {
+      const ctx = document.getElementById('bmiChart').getContext('2d');
+      if (window.myBmiChart) { window.myBmiChart.destroy(); }
+      window.myBmiChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'מדד BMI',
+            data: dataPoints,
+            borderColor: '#66a6ff',
+            backgroundColor: 'rgba(102, 166, 255, 0.1)',
+            fill: true,
+            tension: 0.4
+          }]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+      });
+    }
+
+    function logout() {
+      firebase.auth().signOut().then(() => { window.location.href = "login.html"; });
+    }
+  </script>
+</body>
+</html>
